@@ -1,0 +1,122 @@
+---
+title: "COURSE08_ASSIGNMENT"
+author: "Bruno Laget Merino"
+date: "2023-10-16"
+latex_engine: pdflatex
+output: html_document
+---
+
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+```
+
+# Overview and Objectives
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+```{r PackagesLoaded, echo=FALSE}
+invisible(lapply(c("data.table","ggplot2","broom",'dplyr',"knitr","DT",
+                   "reshape2","lattice","formattable","kernlab","datasets", "tidyr",
+                   "corrplot","rattle", "data.table", "caret", "randomForest"), 
+                 library, character.only = TRUE))
+set.seed(1000)
+```
+
+#Data Loading and Summary
+
+
+```{r DataLoad}
+#Downloading to current dir
+train_url <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test_url <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url=train_url, destfile="training.csv")
+download.file(url=test_url, destfile="testing.csv")
+```
+
+```{r DataCleaning}
+#Loading training and test datasets
+train <- read.csv("training.csv")
+test <- read.csv("testing.csv")
+
+#Cleaning empty fields, fields with over 70% NA, metadata
+train <- train[,colMeans(is.na(train)) < .7] 
+train <- train[,-c(1:7)]
+#Removing zero variance variables
+ZeroVar <- nearZeroVar(train)
+train <- train[,-ZeroVar]
+```
+
+```{r BasicSummary}
+#Summary of all variables; TRY SEARCHING FOR 'classe', the outcome to be predicted
+train_sum <- data.frame(unclass(summary(train)), check.names = FALSE, stringsAsFactors = FALSE); trainSummary = t(train_sum)
+datatable(trainSummary, colnames = rep("", ncol(trainSummary)))
+featurePlot(x=train[, 46:53], y = train$classe, plot = 'pairs')
+```
+
+```{r Exploring_classe_field}
+unique(train$classe)
+```
+
+# Splitting the training dataset
+
+```{r ValidationAndTraining}
+trainingDS <- createDataPartition(y=train$classe, p=0.7, list=F)
+training <- train[trainingDS,]
+valid <- train[-trainingDS,]
+```
+
+# Running Models
+
+Four distinct models will be employed and compared in their overall fit and effectiveness. 
+
+```{r Model__Control}
+#Fixating training parameters
+control <- trainControl(method="cv", number=3, verboseIter=F) 
+```
+
+```{r Model__Decision_Tree}
+mod_trees <- train(classe~., data=train, method="rpart", trControl = control, tuneLength = 5)
+pred_trees <- predict(mod_trees, valid)
+cmtrees <- confusionMatrix(pred_trees, factor(valid$classe))
+fancyRpartPlot(mod_trees$finalModel)
+```
+
+```{r Model__RandomForest, warning=FALSE, paged.print=TRUE}
+## random forest
+mod_rf <- train(classe~., data=train, method="rf", trControl = control, tuneLength = 5)
+pred_rf <- predict(mod_rf, valid)
+cmrf <- confusionMatrix(pred_rf, factor(valid$classe))
+```
+
+```{r Model__GBM}
+mod_gbm <- train(classe~., data=train, method="gbm", trControl = control, tuneLength = 5, verbose = F)
+pred_gbm <- predict(mod_gbm, valid)
+cmgbm <- confusionMatrix(pred_gbm, factor(valid$classe))
+```
+
+```{r Model__SVM}
+mod_svm <- train(classe~., data=train, method="svmLinear", trControl = control, tuneLength = 5, verbose = F)
+pred_svm <- predict(mod_svm, valid)
+cmsvm <- confusionMatrix(pred_svm, factor(valid$classe))
+```
+
+
+# Comparing the methods
+
+```{r ModelComparison}
+models <- 
+accuracy <- round(c( cmtrees$overall[1], cmrf$overall[1], cmgbm$overall[1], cmsvm$overall[1]),3) #accuracy
+oos_error <- 1 - accuracy #out of sample error
+data.frame(accuracy = accuracy, out_of_sample_error = oos_error, row.names = c("Decision Tree", "Random Forest", "Gen. Boosted Regression", "Sup. Vector Machine"))
+```
+
+
+#Random Forest Model
+
+As seen in the previous section, the Random Forest model performs better than the other models. Random forests present estimates for variable importance, for example neural netsand deal with missing data more efficiently. Among all the available classification methods, random forests normally provide the highest accuracy.
+
+The random forest technique can also handle big data with numerous variables running into thousands. It can automatically balance data sets when a class is more infrequent than other classes in the data. The method also handles variables fast, making it suitable for complicated tasks.
+
+```{r RFModel}
+prediction <- predict(mod_rf, test)
+prediction 
+```
